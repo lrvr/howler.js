@@ -159,9 +159,11 @@
 
       // Create a new AudioContext to make sure it is fully reset.
       if (self.usingWebAudio && self.ctx && typeof self.ctx.close !== 'undefined') {
-        self.ctx.close();
-        self.ctx = null;
-        setupAudioContext();
+        if (self.ctx !== Howler._externalAudioContext ) {
+          self.ctx.close();
+          self.ctx = null;
+          setupAudioContext();
+        }
       }
 
       return self;
@@ -177,6 +179,15 @@
     },
 
     /**
+     * Set an external audioContext (no audioContext will be created)
+     * @param {Object} ctx An existing AudioContext
+     */
+    setAudioContext: function(ctx) {
+        (this || Howler)._externalAudioContext = ctx;
+        setupAudioContext(); // setup is called so that howler can be connected to external tools
+    },
+
+    /**
      * Setup various state values for global tracking.
      * @return {Howler}
      */
@@ -187,7 +198,9 @@
       self.state = self.ctx ? self.ctx.state || 'running' : 'running';
 
       // Automatically begin the 30-second suspend process
-      self._autoSuspend();
+      if (!self._externalAudioContext) {
+        self._autoSuspend();
+      }
 
       // Check if audio is available.
       if (!self.usingWebAudio) {
@@ -1796,7 +1809,9 @@
         self._cleanBuffer(sound._node);
 
         // Attempt to auto-suspend AudioContext if no sounds are still playing.
-        Howler._autoSuspend();
+        if (!Howler._externalAudioContext) {
+          Howler._autoSuspend();
+        }
       }
 
       // When using a sprite, end the track.
@@ -2244,7 +2259,9 @@
   var setupAudioContext = function() {
     // Check if we are using Web Audio and setup the AudioContext if we are.
     try {
-      if (typeof AudioContext !== 'undefined') {
+      if (Howler._externalAudioContext) {
+        Howler.ctx = Howler._externalAudioContext;
+      } else if (typeof AudioContext !== 'undefined') {
         Howler.ctx = new AudioContext();
       } else if (typeof webkitAudioContext !== 'undefined') {
         Howler.ctx = new webkitAudioContext();
@@ -2271,7 +2288,9 @@
     if (Howler.usingWebAudio) {
       Howler.masterGain = (typeof Howler.ctx.createGain === 'undefined') ? Howler.ctx.createGainNode() : Howler.ctx.createGain();
       Howler.masterGain.gain.setValueAtTime(Howler._muted ? 0 : 1, Howler.ctx.currentTime);
-      Howler.masterGain.connect(Howler.ctx.destination);
+      // if Howler uses an externalAudioContext, the masterGain will be connected externally
+      if (!Howler._externalAudioContext)
+        Howler.masterGain.connect(Howler.ctx.destination);
     }
 
     // Re-run the setup on Howler.
